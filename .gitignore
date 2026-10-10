@@ -1,0 +1,11 @@
+# 凭据/状态 — 含 cf_clearance 与 session token, 绝不入库
+session.json
+.chrome-profile/
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# macos
+.DS_Store

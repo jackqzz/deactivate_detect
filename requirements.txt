@@ -1,0 +1,3 @@
+# 仅 session bootstrap 需要 (过 Cloudflare 取 sessionIdToken)
+# 检测流程本身只用标准库; 手动传 --session-id 时不需要 playwright
+playwright>=1.40

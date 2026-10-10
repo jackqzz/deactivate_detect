@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>OpenAI 账号状态检测</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  :root {
+    --bg: #0f1115; --panel: #181b22; --border: #2a2f3a;
+    --text: #e6e8ee; --dim: #8b93a5; --accent: #4f8ef7;
+    --green: #34c07c; --red: #e5534b; --orange: #e8a13c; --yellow: #d8c95a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 14px/1.5 -apple-system, "SF Pro", "PingFang SC", sans-serif; }
+  .wrap { max-width: 980px; margin: 0 auto; padding: 24px 20px 60px; }
+  h1 { font-size: 20px; font-weight: 600; margin: 0 0 4px; }
+  .sub { color: var(--dim); font-size: 12px; margin-bottom: 20px; }
+  .card { background: var(--panel); border: 1px solid var(--border);
+          border-radius: 12px; padding: 16px; margin-bottom: 16px; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  textarea {
+    width: 100%; min-height: 140px; resize: vertical;
+    background: #0d0f13; color: var(--text); border: 1px solid var(--border);
+    border-radius: 8px; padding: 10px 12px; font: 13px/1.6 ui-monospace, Menlo, monospace;
+  }
+  textarea:focus, input:focus, select:focus { outline: 1px solid var(--accent); }
+  label { color: var(--dim); font-size: 12px; }
+  input[type=number], select {
+    background: #0d0f13; color: var(--text); border: 1px solid var(--border);
+    border-radius: 6px; padding: 5px 8px; width: 64px;
+  }
+  button {
+    background: var(--accent); color: #fff; border: 0; border-radius: 8px;
+    padding: 8px 18px; font-size: 14px; cursor: pointer; font-weight: 500;
+  }
+  button:hover { filter: brightness(1.1); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.ghost { background: transparent; border: 1px solid var(--border); color: var(--dim); }
+  button.ghost:hover { color: var(--text); }
+  button.sm { padding: 3px 10px; font-size: 12px; border-radius: 6px; }
+  .badge {
+    display: inline-block; padding: 2px 10px; border-radius: 999px;
+    font-size: 12px; font-weight: 600; white-space: nowrap;
+  }
+  .b-normal   { background: #12351f; color: var(--green); }
+  .b-degraded { background: #3d2a10; color: var(--orange); }
+  .b-banned   { background: #3d1512; color: var(--red); }
+  .b-unknown  { background: #33331a; color: var(--yellow); }
+  .b-error    { background: #2a2033; color: #b08ae0; }
+  .b-running  { background: #14263d; color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; color: var(--dim); font-weight: 500; font-size: 12px;
+       padding: 8px 10px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 10px; border-bottom: 1px solid #20242d; vertical-align: top; }
+  td.email { font-family: ui-monospace, Menlo, monospace; }
+  td.snip { color: var(--dim); max-width: 380px; cursor: default; }
+  .stats { display: flex; gap: 18px; font-size: 13px; flex-wrap: wrap; }
+  .stat b { font-size: 18px; margin-right: 4px; }
+  .bar { height: 6px; background: #20242d; border-radius: 3px; overflow: hidden; margin-top: 10px; }
+  .bar > i { display: block; height: 100%; background: var(--accent); width: 0; transition: width .4s; }
+  #sess { font-size: 12px; color: var(--dim); }
+  #sess .ok { color: var(--green); } #sess .bad { color: var(--red); }
+  .mono { font-family: ui-monospace, Menlo, monospace; font-size: 11px; }
+  .right { margin-left: auto; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>OpenAI 账号状态检测</h1>
+  <div class="sub">通过 help.openai.com 客服机器人探测 · 判定: 正常 / 降智 / 封号</div>
+
+  <div class="card">
+    <div class="row">
+      <span id="sess">session: 查询中…</span>
+      <span class="right"></span>
+      <button class="ghost" id="btnSessRefresh">刷新 Session</button>
+      <button class="ghost" id="btnSessHeaded">有头模式重试</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <label>邮箱列表（支持 <span class="mono">邮箱----密码</span> / 换行 / 逗号 混排，密码自动忽略）</label>
+    <textarea id="emails" placeholder="user1@example.com----$wSusj1SLR!S^6!c&#10;user2@example.com&#10;…"></textarea>
+    <div id="emailCount" style="font-size:12px;color:var(--dim);margin-top:6px"></div>
+    <div class="row" style="margin-top:12px">
+      <label>并发 <input type="number" id="conc" value="4" min="1" max="8"></label>
+      <label>间隔(秒) <input type="number" id="delay" value="1.5" step="0.5" min="0"></label>
+      <span class="right"></span>
+      <button id="btnRun">开始检测</button>
+      <button class="ghost" id="btnCsv" disabled>导出 CSV</button>
+    </div>
+  </div>
+
+  <div class="card" id="resultCard" style="display:none">
+    <div class="row">
+      <div class="stats" id="stats"></div>
+      <span class="right" id="progText"></span>
+    </div>
+    <div class="bar"><i id="bar"></i></div>
+    <div class="row" id="reBtns" style="margin-top:10px"></div>
+    <table style="margin-top:12px">
+      <thead><tr><th>#</th><th>邮箱</th><th>结果</th><th>回复摘要</th><th>耗时</th></tr></thead>
+      <tbody id="tbody"></tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let jobId = null, timer = null, lastResults = [];
+
+const LABEL = {normal:'正常', degraded:'降智', banned:'封号', unknown:'未知', error:'失败'};
+const CLS   = {normal:'b-normal', degraded:'b-degraded', banned:'b-banned',
+               unknown:'b-unknown', error:'b-error'};
+
+function parseEmails(text) {
+  // 支持 "email----password"、"email:password"、纯邮箱混排
+  const cleaned = text.split(/\n/).map(l => l.replace(/-{2,}.*$/, "")).join("\n");
+  const all = cleaned.match(/[^\s@:,;|"'<>]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g) || [];
+  return [...new Set(all)];
+}
+
+async function refreshSessionInfo() {
+  try {
+    const r = await (await fetch('/api/session')).json();
+    $('sess').innerHTML = r.ready
+      ? `session: <span class="ok">已就绪</span> <span class="mono">${r.token_prefix||''}</span>`
+      : `session: <span class="bad">未就绪</span> — 检测时会自动获取`;
+  } catch { $('sess').innerHTML = 'session: <span class="bad">服务异常</span>'; }
+}
+
+$('btnSessRefresh').onclick = async () => {
+  $('sess').textContent = 'session: 获取中(无头浏览器)…';
+  const r = await fetch('/api/session/refresh', {method:'POST',
+    headers:{'content-type':'application/json'}, body:'{}'});
+  if (!r.ok) {
+    const e = await r.json().catch(()=>({}));
+    $('sess').innerHTML = `session: <span class="bad">失败</span> ${e.error||''}`;
+  }
+  refreshSessionInfo();
+};
+
+$('btnSessHeaded').onclick = async () => {
+  $('sess').textContent = 'session: 有头模式启动中(若弹验证框请手动点一下)…';
+  await fetch('/api/session/refresh', {method:'POST',
+    headers:{'content-type':'application/json'}, body:'{"headed":true}'});
+  let n = 0;
+  const t = setInterval(async () => {
+    await refreshSessionInfo(); n++;
+    const txt = $('sess').textContent;
+    if (txt.includes('已就绪') || n > 90) clearInterval(t);
+  }, 2000);
+};
+
+$('btnRun').onclick = async () => {
+  const emails = parseEmails($('emails').value);
+  if (!emails.length) { alert('请输入至少一个合法邮箱'); return; }
+  const r = await (await fetch('/api/check', {method:'POST',
+    headers:{'content-type':'application/json'},
+    body: JSON.stringify({emails,
+      concurrency: +$('conc').value || 1,
+      delay: +$('delay').value || 0})})).json();
+  jobId = r.job_id;
+  $('resultCard').style.display = '';
+  $('btnRun').disabled = true;
+  $('tbody').innerHTML = '';
+  lastResults = [];
+  poll();
+};
+
+function render(job) {
+  lastResults = job.results;
+  const c = {normal:0, degraded:0, banned:0, unknown:0, error:0};
+  job.results.forEach(r => c[r.status] !== undefined ? c[r.status]++ : c.unknown++);
+  $('stats').innerHTML =
+    `<span class="stat"><b>${job.total}</b>总数</span>` +
+    `<span class="stat" style="color:var(--green)"><b>${c.normal}</b>正常</span>` +
+    `<span class="stat" style="color:var(--orange)"><b>${c.degraded}</b>降智</span>` +
+    `<span class="stat" style="color:var(--red)"><b>${c.banned}</b>封号</span>` +
+    `<span class="stat" style="color:var(--dim)"><b>${c.unknown + c.error}</b>异常/未知</span>`;
+  $('progText').textContent = `${job.done}/${job.total}` +
+    (job.inflight.length ? `  检测中: ${job.inflight.join(', ')}` : '');
+  $('bar').style.width = (job.done / job.total * 100) + '%';
+
+  const tb = $('tbody');
+  tb.innerHTML = job.results.map((r, i) => {
+    const cls = CLS[r.status] || 'b-unknown';
+    const lbl = LABEL[r.status] || r.status;
+    const snip = (r.reply || r.error || '').replace(/</g,'&lt;');
+    const short = snip.split('\n')[0].slice(0, 90);
+    return `<tr><td>${i+1}</td><td class="email">${r.email}</td>
+      <td><span class="badge ${cls}">${lbl}</span></td>
+      <td class="snip" title="${snip.replace(/"/g,'&quot;')}">${short}</td>
+      <td class="mono">${(r.ms/1000).toFixed(1)}s</td></tr>`;
+  }).join('') +
+  job.inflight.map(e =>
+    `<tr><td>·</td><td class="email">${e}</td>
+     <td><span class="badge b-running">检测中…</span></td><td></td><td></td></tr>`
+  ).join('');
+
+  // 按状态生成重测按钮（仅任务完成后可用）
+  const order = ['normal','degraded','banned','unknown','error'];
+  const counts = {};
+  job.results.forEach(r => counts[r.status] = (counts[r.status]||0)+1);
+  const dis = job.status !== 'done' ? 'disabled' : '';
+  $('reBtns').innerHTML =
+    order.filter(s => counts[s]).map(s =>
+      `<button class="ghost sm" data-s="${s}" ${dis}>重测${LABEL[s]}(${counts[s]})</button>`
+    ).join('') +
+    (job.results.length
+      ? `<button class="ghost sm" data-s="__all" ${dis}>全部重测(${job.results.length})</button>`
+      : '');
+  $('reBtns').querySelectorAll('button').forEach(b => b.onclick = () => recheck(b.dataset.s));
+}
+
+function recheck(which) {
+  const emails = which === '__all'
+    ? lastResults.map(r => r.email)
+    : lastResults.filter(r => r.status === which).map(r => r.email);
+  if (!emails.length || $('btnRun').disabled) return;
+  $('emails').value = emails.join('\n');
+  $('emails').dispatchEvent(new Event('input'));
+  $('btnRun').click();
+}
+
+async function poll() {
+  if (!jobId) return;
+  const job = await (await fetch('/api/job?id=' + jobId)).json();
+  render(job);
+  if (job.status === 'done') {
+    $('btnRun').disabled = false;
+    $('btnCsv').disabled = false;
+    refreshSessionInfo();
+    return;
+  }
+  timer = setTimeout(poll, 1500);
+}
+
+$('btnCsv').onclick = () => {
+  const rows = [['email','status','reply','thread','ms'].join(',')];
+  lastResults.forEach(r => rows.push(
+    [r.email, LABEL[r.status]||r.status,
+     '"'+(r.reply||r.error||'').replace(/"/g,'""').replace(/\n/g,' ')+'"',
+     r.thread||'', r.ms].join(',')));
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob(['﻿'+rows.join('\n')],
+    {type:'text/csv'}));
+  a.download = 'account_check_' + Date.now() + '.csv';
+  a.click();
+};
+
+$('emails').addEventListener('input', () => {
+  const lines = $('emails').value.split(/\n/).map(l => l.trim()).filter(Boolean);
+  const n = parseEmails($('emails').value).length;
+  const bad = lines.filter(l => !parseEmails(l).length).length;
+  $('emailCount').innerHTML = n
+    ? `已解析 <b style="color:var(--green)">${n}</b> 个邮箱` +
+      (bad ? ` <span style="color:var(--yellow)">(${bad} 行无法识别)</span>` : '')
+    : (lines.length ? `<span style="color:var(--yellow)">未识别到邮箱</span>` : '');
+});
+
+refreshSessionInfo();
+</script>
+</body>
+</html>
